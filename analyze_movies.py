@@ -1,3 +1,4 @@
+import sys
 # performs basic analysis of data from Movie Lens 1m dataset ( http://grouplens.org/datasets/movielens/ )
 class MovieLensParser(object):
 
@@ -23,4 +24,14 @@ class MovieLensParserException(Exception):
     pass
 
 if __name__ == '__main__':
-    ml = MovieLensParser()
+    # shift off the script name from argv before passing through for validation
+    sys.argv.pop(0)
+    try:
+        ml = MovieLensParser()
+        ml.validateInput(sys.argv)
+    except MovieLensParserException:
+        #TODO: nice error handling here
+        pass
+
+    print ml.getResults()
+
