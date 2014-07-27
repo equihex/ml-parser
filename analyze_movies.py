@@ -3,6 +3,9 @@ import sys
 
 
 # performs basic analysis of data from Movie Lens 1m dataset ( http://grouplens.org/datasets/movielens/ )
+import operator
+
+
 class MovieLensParser(object):
 
     USAGE = "usage: analyze_movies.py (gender|agegroup) (top|bottom) <number>"
@@ -12,6 +15,8 @@ class MovieLensParser(object):
     ALLOWED_GROUPINGS = ["gender", "agegroup"]
     # orderings allowed
     ALLOWED_ORDERS = ["top", "bottom"]
+    # minimum number of reviews required for a useful average score - filter out movies with fewer unique users than this
+    MIN_UNIQUE_USERS = 50
 
     # readable names for fields in the users.dat file
     USER_GENDERS = {'F': 'Female', 'M': 'Male'}
@@ -32,8 +37,6 @@ class MovieLensParser(object):
 
     def __init__(self, args):
         # this will check for Movie Lens files, load them into memory etc
-        # TODO: basic validation that data in these files is what we expect - read the first line and check contents
-        # TODO: load the data into useful data structures for use with getResults - load differently / transform depending on how we are called?
         # check the command line args are sane, and store them
         self.validateInput(args)
 
@@ -129,27 +132,39 @@ class MovieLensParser(object):
         # iterate through our groups, and assign the movies / ratings in them into the relevant buckets
         for group in sorted(self.users.keys()):
             group_name = self.USER_AGES[group] if self.grouping == 'agegroup' else self.USER_GENDERS[group]
-            bucketed = Counter()
+            user_ratings = defaultdict(lambda: defaultdict(int))
             # do a slice on our ratings to get the ratings for the set of users in this group
             group_ratings = [self.ratings[x] for x in self.users[group]]
             # iterate over each user's set of ratings
             for rating_set in group_ratings:
                 for movie_id in rating_set.keys():
-                    bucketed[movie_id] += int(rating_set[movie_id])
+                    user_ratings[movie_id]['total_rating'] += int(rating_set[movie_id])
+                    user_ratings[movie_id]['total_users'] += 1
+
+            # convert to averages
+            averages = {}
+            # skip movies with too few reviews
+            for movie_id in filter(lambda x: user_ratings[x]['total_users'] >= self.MIN_UNIQUE_USERS,
+                                   user_ratings.keys()):
+                averages[movie_id] \
+                    = user_ratings[movie_id]['total_rating'] / float(user_ratings[movie_id]['total_users'])
 
             if self.order == 'top':
-                ranked_movies = bucketed.most_common(self.max_results)
+                sorted_movies = sorted(averages.iteritems(),
+                                       key=operator.itemgetter(1), reverse=True)[:self.max_results]
             elif self.order == 'bottom':
-                ranked_movies = reversed(bucketed.most_common()[len(bucketed) - self.max_results:])
+                sorted_movies = sorted(averages.iteritems(), key=operator.itemgetter(1))[:self.max_results]
             else:
                 raise MovieLensParserInputError('{0} is not a valid ordering'.format(self.order))
 
             group_title = ['', '{0} ranked movies for group: {1}'.format(self.order.capitalize(), group_name), '']
             self.output_msg.extend(group_title)
 
-            for movie in ranked_movies:
-                formatted = "{0} - total rating {1}".format(
-                    self.movies[movie[0]], movie[1]
+            ranking_number = 0
+            for movie in sorted_movies:
+                ranking_number += 1
+                formatted = "{}: {} - average rating {:.3f}".format(
+                    ranking_number, self.movies[movie[0]], movie[1]
                 )
                 self.output_msg.append(formatted)
 
